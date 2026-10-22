@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: todoapp-api
+  sql:
+    init:
+      # AD-3：表结构只由 Flyway 修改（Boot 4.1 默认是 embedded）
+      mode: never
+  flyway:
+    # AD-5：保持 validate-on-migrate，禁用 clean
+    clean-disabled: true
+    validate-on-migrate: true
+  web:
+    resources:
+      # AD-8：本服务不托管静态资源（staging 由 nginx 托管前端 dist）。
+      # 关掉 /** 静态资源映射，任何方法的未知路由都走 NoHandlerFoundException → 404。
+      add-mappings: false
+  datasource:
+    hikari:
+      data-source-properties:
+        # 日志不记标题：PgJDBC 默认把服务端错误 Detail（如 "Failing row contains (...)"）拼进异常消息
+        logServerErrorDetail: false
+
+server:
+  # AD-14：本机只监听回环；staging 在 application-staging.yaml 中覆盖（AD-15）
+  address: 127.0.0.1
+  port: 8080

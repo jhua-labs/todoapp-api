@@ -1,0 +1,8 @@
+target/
+.local-pg/
+deploy/.env
+.git
+.idea/
+*.iml
+.vscode/
+.DS_Store

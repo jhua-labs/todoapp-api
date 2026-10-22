@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 版本一律写死（Stack 表）。Boot BOM 管理的依赖不重复写版本，由 parent 4.1.1 固定。 -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.todoapp</groupId>
+    <artifactId>todoapp-api</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>todoapp-api</name>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- AD-14 / AD-16：embedded-postgres 只在 test 范围；二进制固定 18.6.0（库默认是 14） -->
+        <embedded-postgres.version>2.2.2</embedded-postgres.version>
+        <embedded-postgres-binaries.version>18.6.0</embedded-postgres-binaries.version>
+
+        <!-- 插件版本与 Boot 4.1.1 parent 管理的版本一致，这里显式写死 -->
+        <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
+        <maven-dependency-plugin.version>3.10.0</maven-dependency-plugin.version>
+        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+
+        <!--
+          needs-staging 标签约定（测试设计「标签约定」）：
+          默认排除只有部署后才能证明的测试，裸跑 `mvnw test` 与 PR 命令
+          `-DexcludedGroups=needs-staging` 结果一致。
+          只跑 staging 测试：-Dgroups=needs-staging（自动激活下方 staging-tests profile，
+          清空默认排除，且选不到任何测试时构建失败）。
+        -->
+        <excludedGroups>needs-staging</excludedGroups>
+
+        <!-- 供将来的覆盖率等 agent 追加（surefire 用 @{argLine} 延迟求值）；默认为空 -->
+        <argLine></argLine>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.zonky.test.postgres</groupId>
+                <artifactId>embedded-postgres-binaries-bom</artifactId>
+                <version>${embedded-postgres-binaries.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- AD-3：webmvc + jdbc + flyway，显式声明 flyway-database-postgresql 与 postgresql(runtime)；禁止 JPA/ORM -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- 测试：JUnit Jupiter + MockMvc（AD-16：spring-boot-starter-webmvc-test） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 测试：embedded-postgres（随机端口 + 临时目录），不进入生产 jar -->
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-postgres</artifactId>
+            <version>${embedded-postgres.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- zonky 默认不带 Apple Silicon 二进制；开发机是 darwin-arm64，显式引入（版本由 binaries BOM 固定为 18.6.0） -->
+        <dependency>
+            <groupId>io.zonky.test.postgres</groupId>
+            <artifactId>embedded-postgres-binaries-darwin-arm64v8</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!--
+              INF-B1 的可执行守卫：
+              - AD-3 禁止 JPA / Hibernate / 任何 ORM；
+              - JDK 必须是 21（.java-version 只是提示，这里强制）；
+              - Maven 不低于 3.9.16（wrapper 固定为 3.9.16）。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-architecture</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[21,22)</version>
+                                    <message>todoapp-api 要求 JDK 21（JAVA_HOME 指向 openjdk@21）。</message>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>3.9.16</version>
+                                </requireMavenVersion>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
+                                        <exclude>org.springframework.data:spring-data-jpa</exclude>
+                                        <exclude>org.hibernate:*</exclude>
+                                        <exclude>org.hibernate.orm:*</exclude>
+                                        <exclude>jakarta.persistence:*</exclude>
+                                        <exclude>org.mybatis:*</exclude>
+                                        <exclude>org.jooq:*</exclude>
+                                    </excludes>
+                                    <message>AD-3：数据访问只用 JdbcClient，禁止引入 JPA / Hibernate / 任何 ORM。</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- 暴露 ${org.mockito:mockito-core:jar}，让 surefire 以 -javaagent 方式加载 Mockito（JDK 21+ 不再推荐动态 self-attach） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>dependency-jar-properties</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <!--
+                      Asia/Shanghai（非 UTC）跑测试：代码若误用系统默认时区，输出就不再是固定的 ...Z 格式，测试会红。
+                      时间本身一律来自冻结的 MutableClock（AD-9 / AD-16）。
+                    -->
+                    <argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar} -Duser.timezone=Asia/Shanghai -Dfile.encoding=UTF-8</argLine>
+                    <trimStackTrace>false</trimStackTrace>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          传了 -Dgroups=... 就自动激活：清空默认的 needs-staging 排除，否则包含与排除互相抵消，
+          会出现「0 个测试、BUILD SUCCESS」的假绿；同时选不到任何测试时直接失败。
+        -->
+        <profile>
+            <id>staging-tests</id>
+            <activation>
+                <property>
+                    <name>groups</name>
+                </property>
+            </activation>
+            <properties>
+                <excludedGroups></excludedGroups>
+                <failIfNoTests>true</failIfNoTests>
+            </properties>
+        </profile>
+    </profiles>
+</project>

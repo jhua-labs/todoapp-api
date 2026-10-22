@@ -1,0 +1,67 @@
+# todoapp staging 部署（AD-15，Story 4.2 / OPS-1）。在 todoapp-api/deploy/ 下执行：docker compose up -d --build
+#
+# 安全边界（不可协商，NFR-安全边界）：只有 web 发布端口，且只绑本机回环 127.0.0.1:8080:80；
+# api、db 不发布任何端口，只在 compose 默认网络里互通。不得新增服务、不得写 network_mode、不得新增端口映射。
+#
+# 凭据只在 deploy/.env（不提交，见 .env.example）；下面的 ${…} 由 compose 从 .env 插值，缺失时直接报错。
+
+services:
+  db:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?在 deploy/.env 里设置 POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?在 deploy/.env 里设置 POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?在 deploy/.env 里设置 POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8
+    volumes:
+      # postgres 18+ 镜像的 VOLUME 是 /var/lib/postgresql（PGDATA 在其下的 18/docker），不要挂旧的 /data
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # $$ 防止 compose 提前插值，由容器内 shell 读取环境变量
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: staging
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?在 deploy/.env 里设置 POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?在 deploy/.env 里设置 POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?在 deploy/.env 里设置 POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: ../../todoapp-web
+    depends_on:
+      - api
+    # 整个文件里唯一的端口发布：必须带 127.0.0.1（省略主机 IP 会绑所有接口）
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:

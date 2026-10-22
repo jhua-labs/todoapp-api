@@ -1,0 +1,10 @@
+# staging profile（AD-15）。OPS-1 之后只改这个文件。
+#
+# 数据源完全来自环境变量 SPRING_DATASOURCE_URL / SPRING_DATASOURCE_USERNAME / SPRING_DATASOURCE_PASSWORD
+# （deploy/.env，不提交）。这里不写任何地址和密码。
+
+server:
+  # 容器内必须监听容器网卡，nginx 才能经 compose 网络访问 api:8080。
+  # 依据 AD-15「网络边界」：对外是否暴露由 deploy/compose.yaml 中
+  # 「只有 web 发布端口且只绑 127.0.0.1:8080:80，api、db 不发布任何端口」保证，而不是由 server.address 保证。
+  address: 0.0.0.0
